@@ -8,37 +8,20 @@ ENV/
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-*.egg
-*.egg-info/
-dist/
-build/
-.Python
 
-# Jupyter Notebook
-.ipynb_checkpoints/
+# Model files - COMMENTED OUT TO ALLOW UPLOAD
+# *.pkl
 
-# Model files (large files)
-*.pkl
-*.h5
-*.model
-
-# Data files (optional - uncomment if you want to ignore data)
+# Data files
 # *.csv
-# employee_data.csv
-# employee_predictions.csv
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
 
 # OS
 .DS_Store
 Thumbs.db
-desktop.ini
 
 # Streamlit
 .streamlit/secrets.toml
@@ -46,5 +29,5 @@ desktop.ini
 # Logs
 *.log
 
-# Environment variables
+# Environment
 .env
