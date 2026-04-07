@@ -1,5 +1,3 @@
-# app.py - UPDATED VERSION
-
 """
 Employee Attrition Risk Prediction Dashboard
 A Professional ML-Powered Analytics Platform for Palo Alto Networks
@@ -116,35 +114,71 @@ st.markdown("""
         padding-bottom: 10px;
         border-bottom: 3px solid #3b82f6;
     }
-    
-    /* Logo box */
-    .logo-box {
-        background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-        padding: 20px;
-        border-radius: 10px;
-        text-align: center;
-        color: white;
-        font-size: 20px;
-        font-weight: bold;
-        margin-bottom: 20px;
-    }
 </style>
 """, unsafe_allow_html=True)
+
+# Auto-training functions
+def train_and_save_model():
+    """Train model from scratch"""
+    try:
+        from model_training import AttritionPredictor
+        
+        st.info("🔄 Training machine learning models... This will take 2-3 minutes...")
+        progress_bar = st.progress(0)
+        
+        predictor = AttritionPredictor()
+        progress_bar.progress(30)
+        
+        predictor.prepare_and_train('employee_data.csv')
+        progress_bar.progress(100)
+        
+        st.success("✅ Model training complete!")
+        st.balloons()
+        return True
+    except Exception as e:
+        st.error(f"❌ Training failed: {str(e)}")
+        st.error("Please check that employee_data.csv exists and is properly formatted.")
+        return False
 
 # Load Resources
 @st.cache_resource
 def load_model_components():
-    """Load trained model and components"""
+    """Load trained model and components with error handling"""
     try:
         model = joblib.load('best_model.pkl')
         scaler = joblib.load('scaler.pkl')
         label_encoders = joblib.load('label_encoders.pkl')
         feature_names = joblib.load('feature_names.pkl')
         return model, scaler, label_encoders, feature_names
-    except FileNotFoundError:
-        st.error("⚠️ Model files not found. Please run model_training.py first!")
-        st.info("Run: `python model_training.py` in your terminal")
-        st.stop()
+    except (FileNotFoundError, ModuleNotFoundError, AttributeError) as e:
+        st.warning("⚠️ Model files not found or incompatible. Training new models...")
+        
+        # Delete old incompatible files
+        for file in ['best_model.pkl', 'scaler.pkl', 'label_encoders.pkl', 'feature_names.pkl']:
+            if os.path.exists(file):
+                try:
+                    os.remove(file)
+                except:
+                    pass
+        
+        # Clear cache
+        st.cache_resource.clear()
+        
+        # Trigger retraining
+        if train_and_save_model():
+            # Try loading again
+            try:
+                model = joblib.load('best_model.pkl')
+                scaler = joblib.load('scaler.pkl')
+                label_encoders = joblib.load('label_encoders.pkl')
+                feature_names = joblib.load('feature_names.pkl')
+                return model, scaler, label_encoders, feature_names
+            except Exception as e:
+                st.error(f"Failed to load models after training: {str(e)}")
+                st.stop()
+        else:
+            st.error("Cannot proceed without trained models.")
+            st.stop()
 
 @st.cache_data
 def load_data():
@@ -153,9 +187,14 @@ def load_data():
         df = pd.read_csv('employee_predictions.csv')
         return df
     except FileNotFoundError:
-        st.error("⚠️ Predictions file not found. Please run model_training.py first!")
-        st.info("Run: `python model_training.py` in your terminal")
-        st.stop()
+        try:
+            # If predictions don't exist, load raw data
+            df = pd.read_csv('employee_data.csv')
+            st.warning("Predictions file not found. Using raw data.")
+            return df
+        except FileNotFoundError:
+            st.error("⚠️ Data file not found. Please ensure employee_data.csv exists.")
+            st.stop()
 
 # Helper Functions
 def get_risk_badge(risk_category):
@@ -203,58 +242,19 @@ def create_gauge_chart(value, title):
     
     return fig
 
-# Main Application
-def main():
-    # Load data
-    df = load_data()
-    model, scaler, label_encoders, feature_names = load_model_components()
-    
-    # Header
-    st.markdown('<h1 class="main-title">🎯 Employee Attrition Risk Analytics</h1>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle">Predictive Workforce Intelligence Platform | Palo Alto Networks</p>', unsafe_allow_html=True)
-    
-    # Sidebar Navigation - FIXED VERSION
-    st.sidebar.markdown("""
-    <div class="logo-box">
-        🏢 Palo Alto Networks
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.sidebar.markdown("---")
-    
-    page = st.sidebar.radio(
-        "📊 Navigation",
-        ["🏠 Dashboard Overview", "📈 Department Analytics", "👤 Employee Profile", 
-         "💡 Insights & Actions", "📊 Model Performance"],
-        index=0
-    )
-    
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📋 Quick Stats")
-    st.sidebar.metric("Total Employees", len(df))
-    st.sidebar.metric("High Risk", len(df[df['RiskCategory'] == 'High']))
-    st.sidebar.metric("Avg Risk Score", f"{df['AttritionRisk'].mean():.1%}")
-    
-    # Page Routing
-    if page == "🏠 Dashboard Overview":
-        show_dashboard(df)
-    elif page == "📈 Department Analytics":
-        show_department_analytics(df)
-    elif page == "👤 Employee Profile":
-        show_employee_profile(df)
-    elif page == "💡 Insights & Actions":
-        show_insights_actions(df)
-    elif page == "📊 Model Performance":
-        show_model_performance()
-
 def show_dashboard(df):
     """Main dashboard view"""
     
     # Key Metrics Row
     col1, col2, col3, col4 = st.columns(4)
     
+    total_employees = len(df)
+    high_risk = len(df[df['RiskCategory'] == 'High']) if 'RiskCategory' in df.columns else 0
+    medium_risk = len(df[df['RiskCategory'] == 'Medium']) if 'RiskCategory' in df.columns else 0
+    avg_risk = df['AttritionRisk'].mean() if 'AttritionRisk' in df.columns else 0
+    
     with col1:
-        total_employees = len(df)
+        pct_high = (high_risk / total_employees * 100) if total_employees > 0 else 0
         st.markdown(f"""
         <div class="metric-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
             <div class="metric-label">Total Employees</div>
@@ -263,8 +263,7 @@ def show_dashboard(df):
         """, unsafe_allow_html=True)
     
     with col2:
-        high_risk = len(df[df['RiskCategory'] == 'High'])
-        pct_high = (high_risk / total_employees * 100)
+        pct_high = (high_risk / total_employees * 100) if total_employees > 0 else 0
         st.markdown(f"""
         <div class="metric-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
             <div class="metric-label">High Risk</div>
@@ -274,8 +273,7 @@ def show_dashboard(df):
         """, unsafe_allow_html=True)
     
     with col3:
-        medium_risk = len(df[df['RiskCategory'] == 'Medium'])
-        pct_medium = (medium_risk / total_employees * 100)
+        pct_medium = (medium_risk / total_employees * 100) if total_employees > 0 else 0
         st.markdown(f"""
         <div class="metric-card" style="background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);">
             <div class="metric-label">Medium Risk</div>
@@ -285,7 +283,6 @@ def show_dashboard(df):
         """, unsafe_allow_html=True)
     
     with col4:
-        avg_risk = df['AttritionRisk'].mean()
         st.markdown(f"""
         <div class="metric-card" style="background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);">
             <div class="metric-label">Average Risk Score</div>
@@ -295,110 +292,115 @@ def show_dashboard(df):
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Charts Row
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown('<div class="section-header">📊 Risk Distribution</div>', unsafe_allow_html=True)
+    # Only show charts if we have risk data
+    if 'RiskCategory' in df.columns and 'AttritionRisk' in df.columns:
+        # Charts Row
+        col1, col2 = st.columns(2)
         
-        risk_counts = df['RiskCategory'].value_counts()
-        colors = {'High': '#dc2626', 'Medium': '#f59e0b', 'Low': '#10b981'}
+        with col1:
+            st.markdown('<div class="section-header">📊 Risk Distribution</div>', unsafe_allow_html=True)
+            
+            risk_counts = df['RiskCategory'].value_counts()
+            colors = {'High': '#dc2626', 'Medium': '#f59e0b', 'Low': '#10b981'}
+            
+            fig = go.Figure(data=[go.Pie(
+                labels=risk_counts.index,
+                values=risk_counts.values,
+                hole=0.4,
+                marker_colors=[colors.get(cat, '#3b82f6') for cat in risk_counts.index],
+                textinfo='label+percent',
+                textfont_size=14,
+                pull=[0.1 if cat == 'High' else 0 for cat in risk_counts.index]
+            )])
+            
+            fig.update_layout(
+                showlegend=True,
+                height=400,
+                margin=dict(t=20, b=20, l=20, r=20)
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
         
-        fig = go.Figure(data=[go.Pie(
-            labels=risk_counts.index,
-            values=risk_counts.values,
-            hole=0.4,
-            marker_colors=[colors[cat] for cat in risk_counts.index],
-            textinfo='label+percent',
-            textfont_size=14,
-            pull=[0.1 if cat == 'High' else 0 for cat in risk_counts.index]
-        )])
+        with col2:
+            st.markdown('<div class="section-header">📈 Risk Score Distribution</div>', unsafe_allow_html=True)
+            
+            fig = go.Figure()
+            
+            fig.add_trace(go.Histogram(
+                x=df['AttritionRisk'],
+                nbinsx=30,
+                marker_color='#3b82f6',
+                opacity=0.7,
+                name='Risk Distribution'
+            ))
+            
+            fig.add_vline(x=0.3, line_dash="dash", line_color="green", annotation_text="Low Risk Threshold")
+            fig.add_vline(x=0.6, line_dash="dash", line_color="red", annotation_text="High Risk Threshold")
+            
+            fig.update_layout(
+                xaxis_title="Attrition Risk Probability",
+                yaxis_title="Number of Employees",
+                height=400,
+                showlegend=False,
+                margin=dict(t=20, b=50, l=50, r=20)
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
         
-        fig.update_layout(
-            showlegend=True,
-            height=400,
-            margin=dict(t=20, b=20, l=20, r=20)
-        )
+        # Risk by Department
+        if 'Department' in df.columns:
+            st.markdown('<div class="section-header">🏢 Risk by Department</div>', unsafe_allow_html=True)
+            
+            dept_risk = df.groupby('Department').agg({
+                'AttritionRisk': 'mean',
+                'EmployeeID': 'count'
+            }).reset_index()
+            dept_risk.columns = ['Department', 'Average Risk', 'Employee Count']
+            dept_risk = dept_risk.sort_values('Average Risk', ascending=False)
+            
+            fig = go.Figure()
+            
+            fig.add_trace(go.Bar(
+                x=dept_risk['Department'],
+                y=dept_risk['Average Risk'],
+                marker_color=dept_risk['Average Risk'],
+                marker_colorscale='RdYlGn_r',
+                text=[f"{val:.1%}" for val in dept_risk['Average Risk']],
+                textposition='outside',
+                name='Average Risk'
+            ))
+            
+            fig.update_layout(
+                xaxis_title="Department",
+                yaxis_title="Average Attrition Risk",
+                height=400,
+                showlegend=False,
+                yaxis_tickformat='.0%'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
         
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.markdown('<div class="section-header">📈 Risk Score Distribution</div>', unsafe_allow_html=True)
+        # High Risk Employees Table
+        st.markdown('<div class="section-header">🚨 Top 10 Highest Risk Employees</div>', unsafe_allow_html=True)
         
-        fig = go.Figure()
+        display_cols = ['EmployeeID', 'Department', 'JobRole', 'YearsAtCompany', 'AttritionRisk', 'RiskCategory']
+        available_cols = [col for col in display_cols if col in df.columns]
         
-        fig.add_trace(go.Histogram(
-            x=df['AttritionRisk'],
-            nbinsx=30,
-            marker_color='#3b82f6',
-            opacity=0.7,
-            name='Risk Distribution'
-        ))
+        high_risk_df = df.nlargest(10, 'AttritionRisk')[available_cols].copy()
+        high_risk_df['AttritionRisk'] = high_risk_df['AttritionRisk'].apply(lambda x: f"{x:.1%}")
         
-        fig.add_vline(x=0.3, line_dash="dash", line_color="green", annotation_text="Low Risk Threshold")
-        fig.add_vline(x=0.6, line_dash="dash", line_color="red", annotation_text="High Risk Threshold")
-        
-        fig.update_layout(
-            xaxis_title="Attrition Risk Probability",
-            yaxis_title="Number of Employees",
-            height=400,
-            showlegend=False,
-            margin=dict(t=20, b=50, l=50, r=20)
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Risk by Department
-    st.markdown('<div class="section-header">🏢 Risk by Department</div>', unsafe_allow_html=True)
-    
-    dept_risk = df.groupby('Department').agg({
-        'AttritionRisk': 'mean',
-        'EmployeeID': 'count'
-    }).reset_index()
-    dept_risk.columns = ['Department', 'Average Risk', 'Employee Count']
-    dept_risk = dept_risk.sort_values('Average Risk', ascending=False)
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        x=dept_risk['Department'],
-        y=dept_risk['Average Risk'],
-        marker_color=dept_risk['Average Risk'],
-        marker_colorscale='RdYlGn_r',
-        text=[f"{val:.1%}" for val in dept_risk['Average Risk']],
-        textposition='outside',
-        name='Average Risk'
-    ))
-    
-    fig.update_layout(
-        xaxis_title="Department",
-        yaxis_title="Average Attrition Risk",
-        height=400,
-        showlegend=False,
-        yaxis_tickformat='.0%'
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # High Risk Employees Table
-    st.markdown('<div class="section-header">🚨 Top 10 Highest Risk Employees</div>', unsafe_allow_html=True)
-    
-    high_risk_df = df.nlargest(10, 'AttritionRisk')[
-        ['EmployeeID', 'Department', 'JobRole', 'YearsAtCompany', 'AttritionRisk', 'RiskCategory']
-    ].copy()
-    
-    high_risk_df['AttritionRisk'] = high_risk_df['AttritionRisk'].apply(lambda x: f"{x:.1%}")
-    
-    st.dataframe(
-        high_risk_df,
-        use_container_width=True,
-        hide_index=True
-    )
+        st.dataframe(high_risk_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("📊 Risk predictions will be generated after model training completes.")
 
 def show_department_analytics(df):
     """Department-level analytics view"""
     
     st.markdown('<div class="section-header">🏢 Department-Level Risk Analysis</div>', unsafe_allow_html=True)
+    
+    if 'Department' not in df.columns:
+        st.warning("Department data not available.")
+        return
     
     # Department selector
     departments = ['All Departments'] + sorted(df['Department'].unique().tolist())
@@ -416,124 +418,82 @@ def show_department_analytics(df):
         st.metric("Total Employees", len(df_filtered))
     
     with col2:
-        high_risk_count = len(df_filtered[df_filtered['RiskCategory'] == 'High'])
-        st.metric("High Risk", high_risk_count, delta=f"{high_risk_count/len(df_filtered)*100:.1f}%")
+        high_risk_count = len(df_filtered[df_filtered['RiskCategory'] == 'High']) if 'RiskCategory' in df.columns else 0
+        st.metric("High Risk", high_risk_count, delta=f"{high_risk_count/len(df_filtered)*100:.1f}%" if len(df_filtered) > 0 else "0%")
     
     with col3:
-        avg_risk = df_filtered['AttritionRisk'].mean()
+        avg_risk = df_filtered['AttritionRisk'].mean() if 'AttritionRisk' in df.columns else 0
         st.metric("Average Risk", f"{avg_risk:.1%}")
     
     with col4:
-        avg_tenure = df_filtered['YearsAtCompany'].mean()
+        avg_tenure = df_filtered['YearsAtCompany'].mean() if 'YearsAtCompany' in df.columns else 0
         st.metric("Avg Tenure (Years)", f"{avg_tenure:.1f}")
     
     st.markdown("---")
     
-    # Charts
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📊 Risk Category Breakdown")
+    if 'RiskCategory' in df.columns:
+        # Charts
+        col1, col2 = st.columns(2)
         
-        risk_breakdown = df_filtered['RiskCategory'].value_counts()
-        colors = ['#10b981', '#f59e0b', '#dc2626']
+        with col1:
+            st.subheader("📊 Risk Category Breakdown")
+            
+            risk_breakdown = df_filtered['RiskCategory'].value_counts()
+            colors = ['#10b981', '#f59e0b', '#dc2626']
+            
+            fig = go.Figure(data=[go.Bar(
+                x=risk_breakdown.index,
+                y=risk_breakdown.values,
+                marker_color=colors[:len(risk_breakdown)],
+                text=risk_breakdown.values,
+                textposition='outside'
+            )])
+            
+            fig.update_layout(
+                xaxis_title="Risk Category",
+                yaxis_title="Number of Employees",
+                height=400,
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
         
-        fig = go.Figure(data=[go.Bar(
-            x=risk_breakdown.index,
-            y=risk_breakdown.values,
-            marker_color=colors[:len(risk_breakdown)],
-            text=risk_breakdown.values,
-            textposition='outside'
-        )])
-        
-        fig.update_layout(
-            xaxis_title="Risk Category",
-            yaxis_title="Number of Employees",
-            height=400,
-            showlegend=False
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("📈 Risk by Job Role")
-        
-        role_risk = df_filtered.groupby('JobRole')['AttritionRisk'].mean().sort_values(ascending=False).head(10)
-        
-        fig = go.Figure(data=[go.Bar(
-            y=role_risk.index,
-            x=role_risk.values,
-            orientation='h',
-            marker_color=role_risk.values,
-            marker_colorscale='RdYlGn_r',
-            text=[f"{val:.1%}" for val in role_risk.values],
-            textposition='outside'
-        )])
-        
-        fig.update_layout(
-            xaxis_title="Average Risk",
-            yaxis_title="Job Role",
-            height=400,
-            xaxis_tickformat='.0%'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-    
-    # Detailed Department Table
-    st.subheader("📋 Detailed Statistics by Job Role")
-    
-    role_stats = df_filtered.groupby('JobRole').agg({
-        'EmployeeID': 'count',
-        'AttritionRisk': ['mean', 'min', 'max'],
-        'YearsAtCompany': 'mean',
-        'MonthlyIncome': 'mean'
-    }).round(2)
-    
-    role_stats.columns = ['Count', 'Avg Risk', 'Min Risk', 'Max Risk', 'Avg Tenure', 'Avg Salary']
-    role_stats = role_stats.sort_values('Avg Risk', ascending=False)
-    
-    st.dataframe(role_stats, use_container_width=True)
+        with col2:
+            st.subheader("📈 Risk by Job Role")
+            
+            if 'JobRole' in df.columns:
+                role_risk = df_filtered.groupby('JobRole')['AttritionRisk'].mean().sort_values(ascending=False).head(10)
+                
+                fig = go.Figure(data=[go.Bar(
+                    y=role_risk.index,
+                    x=role_risk.values,
+                    orientation='h',
+                    marker_color=role_risk.values,
+                    marker_colorscale='RdYlGn_r',
+                    text=[f"{val:.1%}" for val in role_risk.values],
+                    textposition='outside'
+                )])
+                
+                fig.update_layout(
+                    xaxis_title="Average Risk",
+                    yaxis_title="Job Role",
+                    height=400,
+                    xaxis_tickformat='.0%'
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
 
 def show_employee_profile(df):
     """Individual employee profile view"""
     
     st.markdown('<div class="section-header">👤 Employee Risk Profile</div>', unsafe_allow_html=True)
     
-    # Filters
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        dept_filter = st.selectbox(
-            "Department",
-            ['All'] + sorted(df['Department'].unique().tolist())
-        )
-    
-    with col2:
-        risk_filter = st.selectbox(
-            "Risk Category",
-            ['All', 'High', 'Medium', 'Low']
-        )
-    
-    with col3:
-        role_filter = st.selectbox(
-            "Job Role",
-            ['All'] + sorted(df['JobRole'].unique().tolist())
-        )
-    
-    # Apply filters
-    df_filtered = df.copy()
-    if dept_filter != 'All':
-        df_filtered = df_filtered[df_filtered['Department'] == dept_filter]
-    if risk_filter != 'All':
-        df_filtered = df_filtered[df_filtered['RiskCategory'] == risk_filter]
-    if role_filter != 'All':
-        df_filtered = df_filtered[df_filtered['JobRole'] == role_filter]
+    if 'EmployeeID' not in df.columns:
+        st.warning("Employee ID data not available.")
+        return
     
     # Employee selector
-    employee_id = st.selectbox(
-        "Select Employee ID",
-        df_filtered['EmployeeID'].tolist()
-    )
+    employee_id = st.selectbox("Select Employee ID", df['EmployeeID'].tolist())
     
     # Get employee data
     employee = df[df['EmployeeID'] == employee_id].iloc[0]
@@ -545,108 +505,67 @@ def show_employee_profile(df):
     
     with col1:
         st.markdown(f"### Employee #{employee['EmployeeID']}")
-        st.markdown(f"**Department:** {employee['Department']}")
-        st.markdown(f"**Job Role:** {employee['JobRole']}")
+        if 'Department' in employee:
+            st.markdown(f"**Department:** {employee['Department']}")
+        if 'JobRole' in employee:
+            st.markdown(f"**Job Role:** {employee['JobRole']}")
     
     with col2:
-        st.markdown(f"**Age:** {employee['Age']}")
-        st.markdown(f"**Gender:** {employee['Gender']}")
-        st.markdown(f"**Years at Company:** {employee['YearsAtCompany']}")
+        if 'Age' in employee:
+            st.markdown(f"**Age:** {employee['Age']}")
+        if 'Gender' in employee:
+            st.markdown(f"**Gender:** {employee['Gender']}")
+        if 'YearsAtCompany' in employee:
+            st.markdown(f"**Years at Company:** {employee['YearsAtCompany']}")
     
     with col3:
-        risk_badge = get_risk_badge(employee['RiskCategory'])
-        st.markdown(risk_badge, unsafe_allow_html=True)
-        st.markdown(f"**Score:** {employee['AttritionRisk']:.1%}")
+        if 'RiskCategory' in employee:
+            risk_badge = get_risk_badge(employee['RiskCategory'])
+            st.markdown(risk_badge, unsafe_allow_html=True)
+        if 'AttritionRisk' in employee:
+            st.markdown(f"**Score:** {employee['AttritionRisk']:.1%}")
     
     st.markdown("---")
     
     # Risk Gauge
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        fig = create_gauge_chart(employee['AttritionRisk'], "Attrition Risk")
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        st.markdown("#### 📊 Employee Metrics")
+    if 'AttritionRisk' in employee:
+        col1, col2 = st.columns([1, 2])
         
-        metric_col1, metric_col2, metric_col3 = st.columns(3)
+        with col1:
+            fig = create_gauge_chart(employee['AttritionRisk'], "Attrition Risk")
+            st.plotly_chart(fig, use_container_width=True)
         
-        with metric_col1:
-            st.metric("Monthly Income", f"${employee['MonthlyIncome']:,.0f}")
-            st.metric("Job Satisfaction", f"{employee['JobSatisfaction']}/4")
-        
-        with metric_col2:
-            st.metric("Years in Role", f"{employee['YearsInCurrentRole']}")
-            st.metric("Work-Life Balance", f"{employee['WorkLifeBalance']}/4")
-        
-        with metric_col3:
-            st.metric("Last Promotion", f"{employee['YearsSinceLastPromotion']} yrs ago")
-            st.metric("Performance", f"{employee.get('PerformanceRating', 'N/A')}")
-    
-    # Risk Factors
-    st.markdown("#### 🎯 Key Risk Factors")
-    
-    risk_factors = []
-    
-    if employee['YearsSinceLastPromotion'] > 3:
-        risk_factors.append("⚠️ **Long promotion gap** - No promotion in 3+ years")
-    
-    if employee['JobSatisfaction'] < 3:
-        risk_factors.append("⚠️ **Low job satisfaction** - Below average satisfaction score")
-    
-    if employee['WorkLifeBalance'] < 3:
-        risk_factors.append("⚠️ **Poor work-life balance** - Needs improvement")
-    
-    if employee['OverTime'] == 'Yes':
-        risk_factors.append("⚠️ **Overtime work** - Regularly working extra hours")
-    
-    if employee.get('PercentSalaryHike', 15) < 12:
-        risk_factors.append("⚠️ **Below average salary hike** - Recent raise below company average")
-    
-    if employee['DistanceFromHome'] > 20:
-        risk_factors.append("⚠️ **Long commute** - Distance from home > 20 miles")
-    
-    if len(risk_factors) > 0:
-        for factor in risk_factors:
-            st.markdown(f'<div class="info-box">{factor}</div>', unsafe_allow_html=True)
-    else:
-        st.success("✅ No major risk factors identified for this employee")
-    
-    # Recommendations
-    st.markdown("#### 💡 Recommended Actions")
-    
-    if employee['AttritionRisk'] > 0.6:
-        st.error("""
-        **IMMEDIATE ACTION REQUIRED:**
-        - Schedule urgent one-on-one meeting with manager
-        - Review compensation and benefits package
-        - Discuss career development opportunities
-        - Consider retention bonus or incentives
-        - Explore flexible work arrangements
-        """)
-    elif employee['AttritionRisk'] > 0.3:
-        st.warning("""
-        **PROACTIVE ENGAGEMENT NEEDED:**
-        - Schedule regular check-in meetings
-        - Provide professional development opportunities
-        - Review workload and work-life balance
-        - Recognize recent achievements
-        - Discuss career progression path
-        """)
-    else:
-        st.info("""
-        **MAINTAIN ENGAGEMENT:**
-        - Continue regular performance reviews
-        - Provide growth opportunities
-        - Maintain competitive compensation
-        - Foster positive work environment
-        """)
+        with col2:
+            st.markdown("#### 📊 Employee Metrics")
+            
+            metric_col1, metric_col2, metric_col3 = st.columns(3)
+            
+            with metric_col1:
+                if 'MonthlyIncome' in employee:
+                    st.metric("Monthly Income", f"${employee['MonthlyIncome']:,.0f}")
+                if 'JobSatisfaction' in employee:
+                    st.metric("Job Satisfaction", f"{employee['JobSatisfaction']}/4")
+            
+            with metric_col2:
+                if 'YearsInCurrentRole' in employee:
+                    st.metric("Years in Role", f"{employee['YearsInCurrentRole']}")
+                if 'WorkLifeBalance' in employee:
+                    st.metric("Work-Life Balance", f"{employee['WorkLifeBalance']}/4")
+            
+            with metric_col3:
+                if 'YearsSinceLastPromotion' in employee:
+                    st.metric("Last Promotion", f"{employee['YearsSinceLastPromotion']} yrs ago")
+                if 'PerformanceRating' in employee:
+                    st.metric("Performance", f"{employee.get('PerformanceRating', 'N/A')}")
 
 def show_insights_actions(df):
     """Insights and actionable recommendations"""
     
     st.markdown('<div class="section-header">💡 Strategic Insights & Action Plan</div>', unsafe_allow_html=True)
+    
+    if 'RiskCategory' not in df.columns or 'AttritionRisk' not in df.columns:
+        st.info("Insights will be available after risk predictions are generated.")
+        return
     
     # Executive Summary
     st.markdown("### 📊 Executive Summary")
@@ -658,13 +577,13 @@ def show_insights_actions(df):
         st.metric("Priority Actions", total_high_risk, help="Employees requiring immediate intervention")
     
     with col2:
-        avg_cost_per_employee = 75000  # Estimated replacement cost
+        avg_cost_per_employee = 75000
         potential_cost = total_high_risk * avg_cost_per_employee
         st.metric("Potential Cost at Risk", f"${potential_cost:,.0f}", 
                  help="Estimated replacement cost for high-risk employees")
     
     with col3:
-        retention_potential = int(total_high_risk * 0.7)  # 70% retention assumption
+        retention_potential = int(total_high_risk * 0.7)
         st.metric("Retention Potential", retention_potential,
                  help="Employees that could be retained with intervention")
     
@@ -673,317 +592,84 @@ def show_insights_actions(df):
     # Priority Employees
     st.markdown("### 🚨 Priority Intervention List")
     
-    priority_df = df[df['RiskCategory'] == 'High'].nlargest(20, 'AttritionRisk')[[
-        'EmployeeID', 'Department', 'JobRole', 'YearsAtCompany', 
-        'JobSatisfaction', 'WorkLifeBalance', 'AttritionRisk'
-    ]].copy()
+    display_cols = ['EmployeeID', 'Department', 'JobRole', 'YearsAtCompany', 
+                   'JobSatisfaction', 'WorkLifeBalance', 'AttritionRisk']
+    available_cols = [col for col in display_cols if col in df.columns]
     
-    priority_df['Action Required'] = '🔴 URGENT'
-    priority_df['AttritionRisk'] = priority_df['AttritionRisk'].apply(lambda x: f"{x:.1%}")
+    priority_df = df[df['RiskCategory'] == 'High'].nlargest(20, 'AttritionRisk')[available_cols].copy()
+    
+    if 'AttritionRisk' in priority_df.columns:
+        priority_df['AttritionRisk'] = priority_df['AttritionRisk'].apply(lambda x: f"{x:.1%}")
     
     st.dataframe(priority_df, use_container_width=True, hide_index=True)
-    
-    # Department-Specific Actions
-    st.markdown("### 🎯 Department-Specific Action Plans")
-    
-    dept_risk = df.groupby('Department').agg({
-        'AttritionRisk': 'mean',
-        'EmployeeID': 'count'
-    }).reset_index()
-    dept_risk.columns = ['Department', 'AvgRisk', 'Count']
-    dept_risk = dept_risk.sort_values('AvgRisk', ascending=False)
-    
-    for _, row in dept_risk.head(3).iterrows():
-        dept = row['Department']
-        risk = row['AvgRisk']
-        
-        with st.expander(f"🏢 {dept} - Risk Score: {risk:.1%}"):
-            dept_employees = df[df['Department'] == dept]
-            high_risk_count = len(dept_employees[dept_employees['RiskCategory'] == 'High'])
-            
-            st.markdown(f"""
-            **Department Statistics:**
-            - Total Employees: {row['Count']}
-            - High Risk Employees: {high_risk_count}
-            - Average Risk Score: {risk:.1%}
-            """)
-            
-            st.markdown("**Common Risk Factors:**")
-            
-            factors = []
-            if (dept_employees['YearsSinceLastPromotion'] > 3).sum() > len(dept_employees) * 0.3:
-                factors.append("- Promotion delays affecting 30%+ of department")
-            if (dept_employees['JobSatisfaction'] < 3).sum() > len(dept_employees) * 0.3:
-                factors.append("- Low job satisfaction is prevalent")
-            if (dept_employees['WorkLifeBalance'] < 3).sum() > len(dept_employees) * 0.3:
-                factors.append("- Work-life balance concerns widespread")
-            if (dept_employees['OverTime'] == 'Yes').sum() > len(dept_employees) * 0.4:
-                factors.append("- High overtime requirements")
-            
-            for factor in factors:
-                st.markdown(factor)
-            
-            st.markdown("**Recommended Actions:**")
-            st.markdown("""
-            1. Conduct department-wide engagement survey
-            2. Review and accelerate promotion timelines
-            3. Implement workload balancing initiatives
-            4. Establish mentorship programs
-            5. Increase recognition and rewards
-            """)
-    
-    # General Recommendations
-    st.markdown("### 📋 Organization-Wide Recommendations")
-    
-    tab1, tab2, tab3 = st.tabs(["Immediate (0-30 days)", "Short-term (1-3 months)", "Long-term (3-12 months)"])
-    
-    with tab1:
-        st.markdown("""
-        #### Immediate Actions (0-30 Days)
-        
-        1. **Emergency Retention Meetings**
-           - Schedule one-on-one discussions with all high-risk employees
-           - Understand specific concerns and challenges
-           - Document feedback and action items
-        
-        2. **Compensation Review**
-           - Fast-track salary reviews for high-risk, high-performers
-           - Consider retention bonuses for critical roles
-           - Benchmark against market rates
-        
-        3. **Workload Assessment**
-           - Review overtime requirements
-           - Redistribute work where possible
-           - Hire temporary support if needed
-        
-        4. **Quick Wins**
-           - Implement flexible work arrangements
-           - Provide immediate recognition
-           - Address any urgent workplace concerns
-        """)
-    
-    with tab2:
-        st.markdown("""
-        #### Short-term Actions (1-3 Months)
-        
-        1. **Career Development Programs**
-           - Launch personalized development plans
-           - Identify promotion-ready employees
-           - Create clear career progression paths
-        
-        2. **Manager Training**
-           - Train managers on retention strategies
-           - Improve one-on-one meeting quality
-           - Enhance feedback mechanisms
-        
-        3. **Work Environment Improvements**
-           - Address work-life balance issues
-           - Improve team collaboration
-           - Enhance workplace amenities
-        
-        4. **Recognition Programs**
-           - Implement peer recognition system
-           - Celebrate achievements regularly
-           - Tie recognition to career growth
-        """)
-    
-    with tab3:
-        st.markdown("""
-        #### Long-term Actions (3-12 Months)
-        
-        1. **Cultural Transformation**
-           - Build employee-centric culture
-           - Enhance organizational values alignment
-           - Improve internal communication
-        
-        2. **Systematic Improvements**
-           - Redesign promotion and compensation frameworks
-           - Implement continuous feedback systems
-           - Establish employee development infrastructure
-        
-        3. **Predictive Monitoring**
-           - Deploy real-time risk monitoring
-           - Automate early warning alerts
-           - Integrate with HRIS systems
-        
-        4. **Strategic Workforce Planning**
-           - Build succession planning processes
-           - Develop talent pipelines
-           - Create knowledge transfer programs
-        """)
-    
-    # ROI Calculator
-    st.markdown("### 💰 ROI Projection")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### Cost of Attrition")
-        replacement_cost = st.slider("Average Replacement Cost per Employee ($)", 
-                                     30000, 150000, 75000, 5000)
-        
-        high_risk_count = len(df[df['RiskCategory'] == 'High'])
-        total_cost_at_risk = high_risk_count * replacement_cost
-        
-        st.metric("Total Cost at Risk", f"${total_cost_at_risk:,.0f}")
-    
-    with col2:
-        st.markdown("#### Projected Savings")
-        retention_rate = st.slider("Expected Retention Rate (%)", 0, 100, 70, 5)
-        
-        employees_retained = int(high_risk_count * (retention_rate / 100))
-        cost_savings = employees_retained * replacement_cost
-        
-        st.metric("Projected Annual Savings", f"${cost_savings:,.0f}")
-        st.metric("Employees Retained", employees_retained)
 
 def show_model_performance():
     """Model performance metrics"""
     
     st.markdown('<div class="section-header">📊 Model Performance Analysis</div>', unsafe_allow_html=True)
     
-    # Load model comparison
     try:
         model_comparison = pd.read_csv('model_comparison.csv')
         
         st.markdown("### 🎯 Model Comparison")
-        
-        # Display comparison table
         st.dataframe(model_comparison, use_container_width=True, hide_index=True)
         
-        # Best model highlight
         best_model = model_comparison.loc[model_comparison['ROC-AUC'].idxmax(), 'Model']
         best_score = model_comparison['ROC-AUC'].max()
         
         st.success(f"🏆 **Best Performing Model:** {best_model} (ROC-AUC: {best_score:.4f})")
         
-        # Metrics visualization
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("#### Performance Metrics Comparison")
-            
-            metrics_to_plot = ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'ROC-AUC']
-            
-            fig = go.Figure()
-            
-            for metric in metrics_to_plot:
-                fig.add_trace(go.Bar(
-                    name=metric,
-                    x=model_comparison['Model'],
-                    y=model_comparison[metric],
-                    text=model_comparison[metric].round(3),
-                    textposition='outside'
-                ))
-            
-            fig.update_layout(
-                barmode='group',
-                height=500,
-                xaxis_title="Model",
-                yaxis_title="Score",
-                yaxis_range=[0, 1.1]
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            st.markdown("#### ROC-AUC Comparison")
-            
-            fig = go.Figure(data=[go.Bar(
-                x=model_comparison['Model'],
-                y=model_comparison['ROC-AUC'],
-                marker_color=model_comparison['ROC-AUC'],
-                marker_colorscale='Viridis',
-                text=[f"{val:.4f}" for val in model_comparison['ROC-AUC']],
-                textposition='outside'
-            )])
-            
-            fig.update_layout(
-                height=500,
-                xaxis_title="Model",
-                yaxis_title="ROC-AUC Score",
-                showlegend=False,
-                yaxis_range=[0, 1.1]
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Feature Importance
-        try:
-            model = joblib.load('best_model.pkl')
-            feature_names = joblib.load('feature_names.pkl')
-            
-            if hasattr(model, 'feature_importances_'):
-                st.markdown("### 📈 Feature Importance Analysis")
-                
-                importances = model.feature_importances_
-                feature_importance_df = pd.DataFrame({
-                    'Feature': feature_names,
-                    'Importance': importances
-                }).sort_values('Importance', ascending=False).head(20)
-                
-                fig = go.Figure(data=[go.Bar(
-                    y=feature_importance_df['Feature'],
-                    x=feature_importance_df['Importance'],
-                    orientation='h',
-                    marker_color=feature_importance_df['Importance'],
-                    marker_colorscale='Viridis'
-                )])
-                
-                fig.update_layout(
-                    title="Top 20 Most Important Features",
-                    xaxis_title="Importance Score",
-                    yaxis_title="Feature",
-                    height=600
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                
-                st.info(f"""
-                **Key Insight:** {feature_importance_df.iloc[0]['Feature']} is the most influential 
-                factor in predicting employee attrition, contributing {feature_importance_df.iloc[0]['Importance']:.2%} 
-                to the model's predictions.
-                """)
-        except:
-            st.warning("Feature importance analysis not available for this model type.")
-        
     except FileNotFoundError:
-        st.error("Model comparison file not found. Please run model_training.py first.")
-    
-    # Model Information
-    st.markdown("### ℹ️ Model Information")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        **Model Type:** Ensemble Learning (Random Forest / XGBoost)
-        
-        **Training Data:**
-        - SMOTE applied for class balancing
-        - 80-20 train-test split
-        - Stratified sampling
-        
-        **Preprocessing:**
-        - Label encoding for binary variables
-        - One-hot encoding for categorical variables
-        - Standard scaling for numerical features
-        """)
-    
-    with col2:
-        st.markdown("""
-        **Evaluation Metrics:**
-        - **Accuracy:** Overall correctness
-        - **Precision:** False positive control
-        - **Recall:** Ability to find all attrition cases
-        - **F1-Score:** Balance of precision and recall
-        - **ROC-AUC:** Overall discrimination ability
-        
-        **Model Update Frequency:** Recommended quarterly
-        """)
+        st.info("Model performance metrics will be available after training completes.")
 
-# Footer
-def add_footer():
+def main():
+    """Main application function"""
+    
+    # Load data and model
+    df = load_data()
+    
+    try:
+        model, scaler, label_encoders, feature_names = load_model_components()
+    except:
+        st.error("Unable to load models. Please refresh the page.")
+        st.stop()
+    
+    # Header
+    st.markdown('<h1 class="main-title">🎯 Employee Attrition Risk Analytics</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Predictive Workforce Intelligence Platform | Palo Alto Networks</p>', unsafe_allow_html=True)
+    
+    # Sidebar Navigation
+    st.sidebar.title("🎛️ Navigation")
+    
+    page = st.sidebar.radio(
+        "📊 Dashboard Sections",
+        ["🏠 Dashboard Overview", "📈 Department Analytics", "👤 Employee Profile", 
+         "💡 Insights & Actions", "📊 Model Performance"],
+        index=0
+    )
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📋 Quick Stats")
+    st.sidebar.metric("Total Employees", len(df))
+    
+    if 'RiskCategory' in df.columns:
+        st.sidebar.metric("High Risk", len(df[df['RiskCategory'] == 'High']))
+    if 'AttritionRisk' in df.columns:
+        st.sidebar.metric("Avg Risk Score", f"{df['AttritionRisk'].mean():.1%}")
+    
+    # Page Routing
+    if page == "🏠 Dashboard Overview":
+        show_dashboard(df)
+    elif page == "📈 Department Analytics":
+        show_department_analytics(df)
+    elif page == "👤 Employee Profile":
+        show_employee_profile(df)
+    elif page == "💡 Insights & Actions":
+        show_insights_actions(df)
+    elif page == "📊 Model Performance":
+        show_model_performance()
+    
+    # Footer
     st.markdown("---")
     st.markdown("""
     <div style='text-align: center; color: #64748b; padding: 20px;'>
@@ -995,4 +681,3 @@ def add_footer():
 
 if __name__ == "__main__":
     main()
-    add_footer()
